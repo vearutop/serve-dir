@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"errors"
 	"fmt"
 	"html"
@@ -13,11 +12,20 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
+	"strings"
+	"time"
 
 	qrterminal "github.com/mdp/qrterminal/v3"
+	"github.com/vearutop/httpzip"
 )
 
 func main() {
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		println(r.URL.Path)
 
@@ -31,9 +39,13 @@ func main() {
 
 		if fi.IsDir() {
 			if r.URL.Query().Get("zip") == "1" {
-				zipDir(w, p)
+				if r.URL.Query().Get("recursive") == "1" {
+					zipDir(w, wd, p, true)
+				} else {
+					zipDir(w, wd, p, false)
+				}
 			} else {
-				listDir(w, p)
+				listDir(w, wd, p)
 			}
 		} else {
 			http.ServeFile(w, r, p)
@@ -59,77 +71,133 @@ func main() {
 	}
 }
 
-func listDir(w http.ResponseWriter, p string) {
+func listDir(w http.ResponseWriter, wd, p string) {
+	dir := path.Join(wd, p)
+
 	w.Header().Add("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte("<!DOCTYPE html>\n<html><body>"))
+	_, _ = w.Write([]byte("<!DOCTYPE html>\n<html><body>"))
+
+	_, _ = w.Write([]byte(`<h1>Index of ` + dir + `</h1>`))
 
 	l, err := os.ReadDir(p)
 	if err != nil {
-		w.Write([]byte(err.Error()))
+		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
+	hasFiles := false
+	hasDirs := false
 	for _, e := range l {
-		w.Write([]byte("<a href=\"/" + html.EscapeString(path.Clean(p+"/"+url.PathEscape(e.Name()))) + "\">" + e.Name() + "</a><br>\n"))
+		if !e.IsDir() {
+			hasFiles = true
+		} else {
+			hasDirs = true
+		}
+
+		if hasDirs && hasFiles {
+			break
+		}
 	}
 
-	w.Write([]byte(`<p><a href="?zip=1">Download all as uncompressed ZIP</a></p>`))
+	if hasFiles {
+		_, _ = w.Write([]byte(`<p><a href="?zip=1">Download files as uncompressed ZIP</a></p>`))
+	}
 
-	w.Write([]byte("</body></html>"))
+	if hasDirs {
+		_, _ = w.Write([]byte(`<p><a href="?zip=1&recursive=1">Download recursively as uncompressed ZIP</a></p>`))
+	}
+
+	_, _ = w.Write([]byte(`<table style="width:100%;"><tr><th align=left>Name</th><th align=left>Last Modified</th><th align=left>Size</th></tr>`))
+
+	if p != "./" {
+		_, _ = w.Write([]byte("<tr><td><a href=\"/" + html.EscapeString(path.Dir(p)) + "\">..</a></td><td>-</td><td>-</td></tr>\n"))
+	}
+
+	for _, e := range l {
+		i, err := e.Info()
+		if err != nil {
+			_, _ = w.Write([]byte("<tr><td>" + err.Error() + "</td></tr>"))
+			continue
+		}
+
+		_, _ = w.Write([]byte("<tr><td><a href=\"/" + html.EscapeString(path.Clean(p+"/"+url.PathEscape(e.Name()))) + "\">" + e.Name() + "</a></td><td>" + i.ModTime().Format(time.RFC3339) + "</td><td>" + strconv.Itoa(int(i.Size())) + "</td></tr>\n"))
+	}
+
+	_, _ = w.Write([]byte("</table></body></html>"))
 }
 
-func zipDir(rw http.ResponseWriter, p string) {
-	l, err := os.ReadDir(p)
+func zipDir(rw http.ResponseWriter, wd, p string, recursive bool) {
+	n := ""
+	if p != "./" {
+		n = path.Base(p)
+	} else {
+		n = path.Base(wd)
+	}
+
+	h := httpzip.NewHandler(n)
+	h.OnError = func(err error) {
+		log.Println(err.Error())
+	}
+
+	p = path.Clean(p)
+
+	zipWalk(h, p, p, recursive)
+
+	h.ServeHTTP(rw, nil)
+}
+
+func zipWalk(h *httpzip.Handler, basePath, strip string, recursive bool) {
+	if strip == "." {
+		strip = "./"
+	}
+
+	l, err := os.ReadDir(basePath)
 	if err != nil {
-		rw.Write([]byte(err.Error()))
+		log.Println(err.Error())
 		return
 	}
 
-	rw.Header().Set("Content-Type", "application/zip")
-	rw.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"files.zip\""))
-
-	// Create a new zip archive.
-	w := zip.NewWriter(rw)
-	defer func() {
-		// Make sure to check the error on Close.
-		clErr := w.Close()
-		if clErr != nil {
-			println(clErr.Error())
-		}
-	}()
-
-	copyImg := func(f io.Writer, fn string) error {
-		src, err := os.Open(fn)
-		if err != nil {
-			println(err.Error())
-			return err
-		}
-		defer func() {
-			if err := src.Close(); err != nil {
-				println(err.Error())
-			}
-		}()
-
-		if _, err = io.Copy(f, src); err != nil {
-			return err
-		}
-
-		return nil
-	}
-
 	for _, e := range l {
-		f, err := w.CreateHeader(&zip.FileHeader{
-			Name:   e.Name(),
-			Method: zip.Store,
+		fn := path.Join(basePath, e.Name())
+		i, err := os.Stat(fn)
+		if err != nil {
+			log.Println(err.Error())
+			continue
+		}
+
+		if i.IsDir() {
+			if recursive {
+				zipWalk(h, fn, strip, true)
+			}
+
+			continue
+		}
+
+		err = h.AddFile(httpzip.FileSource{
+			Path:     strings.TrimPrefix(strings.TrimPrefix(fn, strip), "/"),
+			Modified: i.ModTime(),
+			Size:     i.Size(),
+			Data: func(w io.Writer) error {
+				src, err := os.Open(fn)
+				if err != nil {
+					log.Println(err.Error())
+					return err
+				}
+				defer func() {
+					if err := src.Close(); err != nil {
+						log.Println(err.Error())
+					}
+				}()
+
+				if _, err = io.Copy(w, src); err != nil {
+					return err
+				}
+
+				return nil
+			},
 		})
 		if err != nil {
-			println(err.Error())
-			return
-		}
-
-		if err := copyImg(f, path.Join(p, e.Name())); err != nil {
-			println(err.Error())
-			return
+			log.Println(err.Error())
 		}
 	}
 }

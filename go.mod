@@ -1,10 +1,13 @@
 module github.com/vearutop/serve-dir
 
-go 1.17
+go 1.23
+
+toolchain go1.23.1
 
 require (
-	github.com/bool64/dev v0.2.36
+	github.com/bool64/dev v0.2.37
 	github.com/mdp/qrterminal/v3 v3.2.0
+	github.com/vearutop/httpzip v0.1.0
 )
 
 require (

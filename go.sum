@@ -1,13 +1,9 @@
-github.com/bool64/dev v0.2.36 h1:yU3bbOTujoxhWnt8ig8t94PVmZXIkCaRj9C57OtqJBY=
-github.com/bool64/dev v0.2.36/go.mod h1:iJbh1y/HkunEPhgebWRNcs8wfGq7sjvJ6W5iabL8ACg=
-github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4GtXTXX8a3vIGJpMovkB8vQcUbaXHg=
-github.com/mattn/go-isatty v0.0.16/go.mod h1:kYGgaQfpe5nmfYZH+SKPsOc2e4SrIfOl2e/yFXSvRLM=
-github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
+github.com/bool64/dev v0.2.37 h1:3y7C32+knfKaE3MqWftysRkK1bGLUD3Q4/seiWVhmnI=
+github.com/bool64/dev v0.2.37/go.mod h1:iJbh1y/HkunEPhgebWRNcs8wfGq7sjvJ6W5iabL8ACg=
 github.com/mdp/qrterminal/v3 v3.2.0 h1:qteQMXO3oyTK4IHwj2mWsKYYRBOp1Pj2WRYFYYNTCdk=
 github.com/mdp/qrterminal/v3 v3.2.0/go.mod h1:XGGuua4Lefrl7TLEsSONiD+UEjQXJZ4mPzF+gWYIJkk=
-golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.13.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+github.com/vearutop/httpzip v0.1.0 h1:3Y2i7dpaDFCwOTBX/jBcUH/urDTIZiAKu3vKe8O+q08=
+github.com/vearutop/httpzip v0.1.0/go.mod h1:GQYs1fmG9Y/ZDaRq878ZaYz480t7Tsuo5YVGD4Vubk8=
 golang.org/x/sys v0.14.0 h1:Vz7Qs629MkJkGyHxUlRHizWJRG2j8fbQKjELVSNhy7Q=
 golang.org/x/sys v0.14.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/term v0.13.0 h1:bb+I9cTfFazGW51MZqBVmZy7+JEJMouUHTUSKVQLBek=
