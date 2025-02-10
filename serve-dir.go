@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"html"
 	"io"
@@ -14,13 +15,27 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	qrterminal "github.com/mdp/qrterminal/v3"
+	qrterminal "github.com/Baozisoftware/qrcode-terminal-go"
+	"github.com/bool64/progress"
 	"github.com/vearutop/httpzip"
 )
 
 func main() {
+	var dlzip string
+
+	flag.StringVar(&dlzip, "dlzip", "", "URL to ZIP file. Archive is extracted into current directory.")
+	flag.Parse()
+
+	if dlzip != "" {
+		if err := dlZip(dlzip); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
@@ -63,8 +78,9 @@ func main() {
 		addr = "http://" + v + ":8099"
 	}
 
-	fmt.Println(addr)
-	qrterminal.Generate(addr, qrterminal.M, os.Stdout)
+	fmt.Println(addr, "\n")
+
+	qrterminal.New().Get(addr).Print()
 
 	if err := http.ListenAndServe(":8099", h); err != nil {
 		log.Fatal(err)
@@ -253,4 +269,102 @@ func FindIP(iface net.Interface) (string, error) {
 		return "", errors.New("unable to find an IP for this interface")
 	}
 	return ip, nil
+}
+
+func dlZip(u string) error {
+	resp, err := http.Get(u)
+	if err != nil {
+		return err
+	}
+
+	total := resp.ContentLength
+	filesDone := int64(0)
+	maxLine := int64(0)
+
+	pr := progress.Progress{}
+
+	defer resp.Body.Close()
+
+	cr := progress.NewCountingReader(resp.Body)
+	cr.SetLines(nil)
+
+	pr.Print = func(s progress.Status) {
+		if s.Task != "" {
+			s.Task += ": "
+		}
+
+		res := fmt.Sprintf(s.Task+"%.1f%% bytes read, %d files processed, %.1f files/s, %.1f MB/s, elapsed %s, remaining %s",
+			s.DonePercent, s.LinesCompleted, s.SpeedLPS, s.SpeedMBPS,
+			s.Elapsed.Round(10*time.Millisecond).String(), s.Remaining.String())
+
+		fmt.Print("\r" + strings.Repeat(" ", int(atomic.LoadInt64(&maxLine))) + "\r")
+		fmt.Print(res)
+
+		if atomic.LoadInt64(&maxLine) < int64(len(res)) {
+			atomic.StoreInt64(&maxLine, int64(len(res)))
+		}
+	}
+
+	pr.Start(func(t *progress.Task) {
+		t.TotalBytes = func() int64 {
+			return total
+		}
+
+		t.CurrentBytes = cr.Bytes
+		t.CurrentLines = func() int64 {
+			return atomic.LoadInt64(&filesDone)
+		}
+	})
+
+	zr := httpzip.NewStreamReader(cr)
+
+	for {
+		e, err := zr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("get next entry: %w", err)
+		}
+
+		if !e.IsDir() {
+			fmt.Print("\r" + strings.Repeat(" ", int(atomic.LoadInt64(&maxLine))) + "\r")
+			log.Println("downloading:", e.Name)
+
+			rc, err := e.Open()
+			if err != nil {
+				return fmt.Errorf("open zip entry: %w", err)
+			}
+
+			if err := os.MkdirAll(path.Dir(e.Name), 0o755); err != nil {
+				return fmt.Errorf("mkdirall: %w", err)
+			}
+
+			f, err := os.Create(e.Name)
+			if err != nil {
+				return fmt.Errorf("create file: %w", err)
+			}
+
+			w, err := io.Copy(f, rc)
+			if err != nil {
+				return fmt.Errorf("stream zip file (%d): %w )", w, err)
+			}
+
+			fmt.Print("\r" + strings.Repeat(" ", int(atomic.LoadInt64(&maxLine))) + "\r")
+			log.Println("file length:", w)
+			atomic.AddInt64(&filesDone, 1)
+
+			if err := f.Close(); err != nil {
+				return fmt.Errorf("close file: %w", err)
+			}
+
+			if err := rc.Close(); err != nil {
+				fmt.Errorf("close zip entry reader: %w", err)
+			}
+		}
+	}
+
+	pr.Stop()
+
+	return nil
 }
